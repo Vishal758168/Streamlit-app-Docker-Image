@@ -13,11 +13,13 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # Step 2: Build Docker image locally (optional test)
+    # Step 2: Build Docker image (test build on Actions)
     - name: Build Docker Image
-      run: docker build -t streamlit .
+      run: |
+        export DOCKER_BUILDKIT=1
+        docker build -t streamlit .
 
-    # Step 3: Deploy to EC2
+    # Step 3: Deploy to EC2 via SSH
     - name: Deploy to EC2
       uses: appleboy/ssh-action@v0.1.10
       with:
@@ -25,25 +27,30 @@ jobs:
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # Clone repo if it doesn't exist
+          # Ensure Docker is accessible without sudo
+          sudo usermod -aG docker ubuntu || true
+          newgrp docker
+
+          # Go to app directory or clone if missing
           if [ ! -d "/home/ubuntu/Streamlit-app-Docker-Image" ]; then
             git clone https://github.com/Vishal758168/Streamlit-app-Docker-Image.git /home/ubuntu/Streamlit-app-Docker-Image
           fi
-
           cd /home/ubuntu/Streamlit-app-Docker-Image
 
-          # Pull latest changes
+          # Reset local changes and pull latest
+          git reset --hard
           git pull origin main
 
-          # Stop and remove old container if exists
+          # Stop & remove old container
           docker stop streamlit-app || true
           docker rm streamlit-app || true
 
-          # Build Docker image on EC2
+          # Build new Docker image
+          export DOCKER_BUILDKIT=1
           docker build -t streamlit .
 
           # Run the container exposing port 8501
           docker run -d -p 8501:8501 --name streamlit-app streamlit
 
-          # Verify container is running
+          # Show running containers
           docker ps
